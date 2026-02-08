@@ -6,15 +6,19 @@ use Illuminate\Http\Request;
 use App\Models\Series;
 use App\Models\ScraperLog;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class AdminController extends Controller
 {
+    // --- 1. HALAMAN DASHBOARD ---
     public function index()
     {
-        $series = Series::withCount('episodes')->orderBy('id', 'desc')->get();
+        $series = Series::withCount('episodes')->orderBy('updated_at', 'desc')->get();
         return view('admin.dashboard', compact('series'));
     }
 
+    // --- 2. TAMBAH ANIME BARU ---
     public function store(Request $request)
     {
         $request->validate([
@@ -26,20 +30,21 @@ class AdminController extends Controller
             'title' => $request->title,
             'source_url' => $request->source_url,
             'description' => 'Anime seru', 
-            'poster_image' => 'default.jpg',
-            'image_url' => 'default.jpg',
+            'poster_image' => 'default.jpg', // Nanti bisa diedit
             'type' => 'Donghua'
         ]);
 
         return back()->with('success', '✅ Anime baru berhasil ditambahkan!');
     }
 
+    // --- 3. HALAMAN EDIT ---
     public function edit($id)
     {
         $anime = Series::findOrFail($id);
         return view('admin.edit', compact('anime'));
     }
 
+    // --- 4. UPDATE DATA ANIME (GAMBAR DLL) ---
     public function update(Request $request, $id)
     {
         $request->validate([
@@ -54,74 +59,84 @@ class AdminController extends Controller
             'source_url' => $request->source_url,
         ];
 
+        // Logika Upload Gambar
         if ($request->hasFile('poster_image')) {
             try {
                 $file = $request->file('poster_image');
-                $filename = time() . '_' . $file->getClientOriginalName();
+                $filename = time() . '_' . preg_replace('/\s+/', '', $file->getClientOriginalName());
+                
+                // Pastikan folder ada
                 if (!file_exists(public_path('uploads'))) {
                     mkdir(public_path('uploads'), 0777, true);
                 }
+                
                 $file->move(public_path('uploads'), $filename);
                 $dataToUpdate['poster_image'] = 'uploads/' . $filename;
-                $dataToUpdate['image_url'] = 'uploads/' . $filename; 
+                
             } catch (\Exception $e) {
                 return back()->with('error', 'Gagal upload gambar: ' . $e->getMessage());
             }
         }
 
         $anime->update($dataToUpdate);
-        return redirect()->route('admin.dashboard')->with('success', '✅ Data & Gambar berhasil diperbarui!');
+        return redirect()->route('admin.dashboard')->with('success', '✅ Data berhasil diperbarui!');
     }
 
-    // --- 5. JALANKAN ROBOT (VERSI BACKGROUND WINDOWS) ---
-   public function runScraper(Request $request, $id)
+    // --- 5. JALANKAN ROBOT (SATU ANIME) ---
+    // Versi Railway (Pakai Artisan::call biar stabil)
+    public function runScraper($id)
     {
         $anime = Series::findOrFail($id);
 
-        if ($anime->source_url) {
-            // 1. Ambil jalur lengkap ke file artisan dan log
-            $artisan = base_path('artisan');
-            $logPath = storage_path('logs/scraper_debug.log');
-            $phpPath = PHP_BINARY;
-            $url = $anime->source_url;
-
-            // 2. Trik Tanda Kutip: Kita bungkus semua jalur dengan kutip dua (") 
-            // agar folder "New folder" tidak memutus perintah
-            $command = "\"$phpPath\" \"$artisan\" anime:grab \"$url\" $id > \"$logPath\" 2>&1";
-
-            if (PHP_OS_FAMILY === 'Windows') {
-                // Gunakan /S untuk memberi tahu Windows bahwa perintah di dalamnya dibungkus kutip
-                pclose(popen("start /B cmd /S /C $command", "r"));
-            } else {
-                exec($command . " > /dev/null 2>&1 &");
-            }
-            
-            // 3. Tambahkan catatan ke Laravel Log biasa sebagai bukti controller ini dipicu
-            \Illuminate\Support\Facades\Log::info("Tombol Update diklik untuk anime ID: $id");
-            
-            return back()->with('success', "🚀 Robot diluncurkan! Tunggu 5 detik lalu cek folder storage/logs.");
+        if (!$anime->source_url) {
+            return back()->with('error', '⚠️ Link sumber (source_url) belum diisi! Edit dulu.');
         }
 
-        return back()->with('error', '⚠️ Link sumber belum diisi!');
+        try {
+            // Jalankan perintah robot secara langsung
+            // Ini akan loading sebentar (Synchronous) sampai robot selesai
+            Artisan::call('anime:grab', [
+                'url' => $anime->source_url,
+                'series_id' => $anime->id
+            ]);
+            
+            return back()->with('success', "✅ Sukses! Robot selesai mengecek {$anime->title}.");
+            
+        } catch (\Exception $e) {
+            return back()->with('error', "❌ Robot Error: " . $e->getMessage());
+        }
     }
 
-    
-
-    // --- FITUR BARU: UPDATE SEMUA ---
+    // --- 6. UPDATE SEMUA ANIME (MASSAL) ---
     public function updateAll()
     {
+        // Ambil anime yang punya link sumber saja
         $allSeries = Series::whereNotNull('source_url')->get();
-        if ($allSeries->isEmpty()) return back()->with('error', 'Tidak ada anime untuk diupdate.');
-
-        $artisan = base_path('artisan');
-        foreach ($allSeries as $anime) {
-            $command = "php \"$artisan\" anime:grab \"{$anime->source_url}\" {$anime->id}";
-            pclose(popen("start /B $command", "r"));
+        
+        if ($allSeries->isEmpty()) {
+            return back()->with('error', '⚠️ Tidak ada anime yang memiliki link sumber.');
         }
 
-        return back()->with('success', "🔥 Robot massal diluncurkan untuk " . $allSeries->count() . " anime!");
+        $count = 0;
+        foreach ($allSeries as $anime) {
+            try {
+                // Panggil robot satu per satu
+                Artisan::call('anime:grab', [
+                    'url' => $anime->source_url,
+                    'series_id' => $anime->id
+                ]);
+                $count++;
+            } catch (\Exception $e) {
+                // Kalau satu error, lanjut ke yang lain
+                Log::error("Gagal update {$anime->title}: " . $e->getMessage());
+                continue;
+            }
+        }
+
+        return back()->with('success', "🔥 Selesai! Berhasil memerintahkan robot untuk $count anime.");
     }
 
+    // --- 7. AMBIL LOG LIVE (UNTUK AJAX) ---
     public function getLogs()
     {
         if (class_exists('App\Models\ScraperLog')) {
