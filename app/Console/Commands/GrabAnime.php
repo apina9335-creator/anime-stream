@@ -32,9 +32,10 @@ class GrabAnime extends Command
 
         // Opsi Chrome
         $client = Client::createChromeClient($driverPath, [
-            // '--headless', // Aktifkan ini kalau sudah stabil (biar gak muncul window)
-            '--no-sandbox',
-            '--disable-gpu',
+            '--headless=new',           // <--- 1. WAJIB: Biar jalan tanpa layar
+            '--no-sandbox',             // <--- 2. WAJIB: Biar aman di container
+            '--disable-gpu',            // <--- 3. PENTING: Matikan GPU biar ringan
+            '--disable-dev-shm-usage',  // <--- 4. PENTING: Biar memori gak penuh
             '--window-size=1200,1100',
             '--disable-popup-blocking',
             '--ignore-certificate-errors',
