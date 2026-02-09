@@ -41,7 +41,10 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => rtrim(env('APP_URL'), '/').'/storage',
+            
+            // --- PERBAIKAN: KITA KASIH NILAI DEFAULT BIAR TIDAK NULL ---
+            'url' => rtrim(env('APP_URL', 'https://web-production-f1641.up.railway.app'), '/').'/storage',
+            
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
