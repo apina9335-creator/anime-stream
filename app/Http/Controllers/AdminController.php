@@ -18,7 +18,7 @@ class AdminController extends Controller
         return view('admin.dashboard', compact('series'));
     }
 
-    // --- 2. TAMBAH ANIME BARU ---
+    // --- 2. TAMBAH ANIME BARU (SUDAH DIPERBAIKI) ---
     public function store(Request $request)
     {
         $request->validate([
@@ -30,7 +30,13 @@ class AdminController extends Controller
             'title' => $request->title,
             'source_url' => $request->source_url,
             'description' => 'Anime seru', 
-            'poster_image' => 'default.jpg', // Nanti bisa diedit
+            'poster_image' => 'default.jpg', 
+            
+            // --- PERBAIKAN PENTING DISINI ---
+            // Kita isi image_url dengan placeholder biar database tidak menolak (Error 1364)
+            'image_url' => 'https://via.placeholder.com/300x450', 
+            // --------------------------------
+            
             'type' => 'Donghua'
         ]);
 
@@ -54,15 +60,19 @@ class AdminController extends Controller
         ]);
 
         $anime = Series::findOrFail($id);
+        
         $dataToUpdate = [
             'title' => $request->title,
             'source_url' => $request->source_url,
+            // Opsional: Kalau mau update type juga, tambahkan inputnya di form edit
+            // 'type' => $request->type ?? $anime->type, 
         ];
 
         // Logika Upload Gambar
         if ($request->hasFile('poster_image')) {
             try {
                 $file = $request->file('poster_image');
+                // Buat nama file unik
                 $filename = time() . '_' . preg_replace('/\s+/', '', $file->getClientOriginalName());
                 
                 // Pastikan folder ada
@@ -71,6 +81,8 @@ class AdminController extends Controller
                 }
                 
                 $file->move(public_path('uploads'), $filename);
+                
+                // Simpan path gambar ke database
                 $dataToUpdate['poster_image'] = 'uploads/' . $filename;
                 
             } catch (\Exception $e) {
@@ -83,7 +95,6 @@ class AdminController extends Controller
     }
 
     // --- 5. JALANKAN ROBOT (SATU ANIME) ---
-    // Versi Railway (Pakai Artisan::call biar stabil)
     public function runScraper($id)
     {
         $anime = Series::findOrFail($id);
@@ -94,7 +105,6 @@ class AdminController extends Controller
 
         try {
             // Jalankan perintah robot secara langsung
-            // Ini akan loading sebentar (Synchronous) sampai robot selesai
             Artisan::call('anime:grab', [
                 'url' => $anime->source_url,
                 'series_id' => $anime->id
@@ -110,7 +120,6 @@ class AdminController extends Controller
     // --- 6. UPDATE SEMUA ANIME (MASSAL) ---
     public function updateAll()
     {
-        // Ambil anime yang punya link sumber saja
         $allSeries = Series::whereNotNull('source_url')->get();
         
         if ($allSeries->isEmpty()) {
@@ -120,14 +129,12 @@ class AdminController extends Controller
         $count = 0;
         foreach ($allSeries as $anime) {
             try {
-                // Panggil robot satu per satu
                 Artisan::call('anime:grab', [
                     'url' => $anime->source_url,
                     'series_id' => $anime->id
                 ]);
                 $count++;
             } catch (\Exception $e) {
-                // Kalau satu error, lanjut ke yang lain
                 Log::error("Gagal update {$anime->title}: " . $e->getMessage());
                 continue;
             }
@@ -136,7 +143,7 @@ class AdminController extends Controller
         return back()->with('success', "🔥 Selesai! Berhasil memerintahkan robot untuk $count anime.");
     }
 
-    // --- 7. AMBIL LOG LIVE (UNTUK AJAX) ---
+    // --- 7. AMBIL LOG LIVE ---
     public function getLogs()
     {
         if (class_exists('App\Models\ScraperLog')) {
