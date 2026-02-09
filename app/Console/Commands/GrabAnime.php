@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use Symfony\Component\Panther\Client;
+use Illuminate\Support\Facades\Http; // Pakai HTTP Client Ringan
 use Symfony\Component\DomCrawler\Crawler;
 use App\Models\Series;
 use App\Models\Episode;
@@ -11,9 +11,7 @@ use App\Models\Episode;
 class GrabAnime extends Command
 {
     protected $signature = 'anime:grab {url} {series_id}';
-    protected $description = 'Robot Scraper Anime (Ultra Low Memory Mode)';
-
-    private $client = null;
+    protected $description = 'Robot Scraper Anime (Versi Ringan Tanpa Browser)';
 
     public function handle()
     {
@@ -26,15 +24,18 @@ class GrabAnime extends Command
             return;
         }
 
-        $this->info("🤖 Mulai scrape: {$anime->title}");
-        
-        // 1. NYALAKAN BROWSER MODE HEMAT
-        $this->startBrowser();
+        $this->info("🤖 Mulai scrape: {$anime->title} (Mode Ringan)");
 
         try {
-            // 2. AMBIL DAFTAR EPISODE
-            $this->safeOpen($url);
-            $crawler = new Crawler($this->client->getPageSource());
+            // 1. AMBIL SOURCE CODE HALAMAN UTAMA (Tanpa Browser)
+            $html = $this->fetchHtml($url);
+            
+            if (!$html) {
+                $this->error("❌ Gagal mengambil halaman utama.");
+                return;
+            }
+
+            $crawler = new Crawler($html);
 
             $this->line("🔍 Mencari daftar episode...");
             $selectors = ['.episodelist ul li a', '.eplister ul li a', '.lstep ul li a', '#chapterlist ul li a', '.listsb ul li a', '.bxcl ul li a'];
@@ -55,80 +56,58 @@ class GrabAnime extends Command
                 });
             }
 
+            // Bersihkan link
             $episodeLinks = array_values(array_unique(array_filter($episodeLinks)));
             $totalEps = count($episodeLinks);
             $this->info("📋 Ditemukan $totalEps episode");
 
             if ($totalEps == 0) {
-                $this->error("❌ 0 Episode ditemukan. Cek linknya.");
+                $this->error("❌ 0 Episode ditemukan.");
                 return;
             }
 
-            // 3. LOOP EPISODE
-            $processedCount = 0;
-
+            // 2. LOOP EPISODE
             foreach ($episodeLinks as $epUrl) {
                 if (!str_contains($epUrl, 'http')) $epUrl = $url . $epUrl;
 
-                // Ambil nomor episode
                 preg_match('/episode-(\d+)/', $epUrl, $m);
                 $epNum = $m[1] ?? 0;
+
                 if ($epNum == 0) continue;
 
-                // Cek database (Skip jika ada)
+                // Cek database
                 if (Episode::where('series_id', $seriesId)->where('episode_number', $epNum)->exists()) {
+                    // $this->line("⏩ Skip Ep $epNum (Sudah ada)");
                     continue; 
-                }
-
-                // --- MEMORY SAVER EKSTREM: RESTART BROWSER TIAP 3 EPISODE ---
-                // Biar RAM selalu fresh dan tidak numpuk sampah
-                $processedCount++;
-                if ($processedCount % 3 === 0) {
-                    $this->warn("♻️ Cuci Gudang Memori (Restart Browser)...");
-                    $this->restartBrowser();
                 }
 
                 $this->line("⏳ Proses Ep $epNum...");
 
-                // Retry System
-                $retry = 0;
-                $maxRetries = 2;
-                $success = false;
+                // Jeda sedikit biar gak dikira DDOS
+                usleep(500000); // 0.5 detik
 
-                while ($retry < $maxRetries && !$success) {
-                    try {
-                        $this->processEpisode($epUrl, $seriesId, $epNum);
-                        $success = true; 
-                    } catch (\Exception $e) {
-                        $msg = $e->getMessage();
-                        // Kalau crash, restart browser dan coba lagi
-                        if (str_contains($msg, 'invalid session') || str_contains($msg, 'crash') || str_contains($msg, 'reachable')) {
-                            $this->error("💥 Browser CRASH di Ep $epNum! (Restarting...)");
-                            $this->restartBrowser();
-                            $retry++;
-                        } else {
-                            $this->warn("⚠️ Gagal Ep $epNum: $msg");
-                            break; 
-                        }
-                    }
-                }
+                // PROSES EPISODE
+                $this->processEpisode($epUrl, $seriesId, $epNum);
             }
             $this->info("🏁 SELESAI");
 
         } catch (\Exception $e) {
             $this->error("❌ Error Fatal: " . $e->getMessage());
-        } finally {
-            $this->closeBrowser();
         }
     }
 
     private function processEpisode($url, $seriesId, $epNum)
     {
-        $this->safeOpen($url);
-        
-        $html = $this->client->getPageSource();
+        $html = $this->fetchHtml($url);
+        if (!$html) {
+            $this->warn("⚠️ Gagal buka Ep $epNum");
+            return;
+        }
+
         $crawler = new Crawler($html);
         $videoData = [];
+
+        // --- TEKNIK CARI VIDEO (Sama tapi tanpa JS) ---
 
         // Jurus 1: Iframe
         $crawler->filter('iframe')->each(function ($iframe) use (&$videoData) {
@@ -140,16 +119,21 @@ class GrabAnime extends Command
         $crawler->filter('select option')->each(function ($opt) use (&$videoData) {
             $val = $opt->attr('value');
             $link = $val;
+            
+            // Dekode Base64
             if ($val && !str_contains($val, 'http')) {
                 $decoded = base64_decode($val, true);
                 if ($decoded && preg_match('/src="([^"]+)"/', $decoded, $matches)) $link = $matches[1];
             }
+            
             if ($this->isValidVideo($link)) $videoData[$this->cleanServerName($opt->text())] = $link;
         });
 
-        // Jurus 3: Regex
+        // Jurus 3: Regex (Paling Ampuh di Mode Tanpa Browser)
+        // Kita cari string URL di dalam script mentah
         $patterns = ['ok.ru', 'blogger.com', 'dailymotion', 'drive.google', 'pixeldrain', 'streamtape', 'mp4upload', 'hxfile', 'dood', 'filelions', 'pahe.win', 'streamwish'];
         foreach ($patterns as $p) {
+            // Regex mencari link di dalam source code
             preg_match_all('/https?:\/\/[^"\']*' . preg_quote($p, '/') . '[^"\']*/i', $html, $m);
             foreach ($m[0] ?? [] as $raw) {
                 $clean = str_replace(['\\', '"', "'"], '', $raw);
@@ -164,76 +148,29 @@ class GrabAnime extends Command
             );
             $this->info("✅ Ep $epNum tersimpan (" . count($videoData) . " server)");
         } else {
-            $this->warn("⚠️ Ep $epNum kosong.");
+            $this->warn("⚠️ Ep $epNum kosong (Mungkin butuh JS/Login).");
         }
     }
 
-    // --- SETTINGAN BROWSER ANTI-JEBOL ---
-    private function startBrowser()
+    // --- FUNGSI REQUEST RINGAN ---
+    private function fetchHtml($url)
     {
-        $driverPath = PHP_OS_FAMILY === 'Windows' ? base_path('chromedriver.exe') : null;
-        
-        $this->client = Client::createChromeClient($driverPath, [
-            '--headless=new',           // Wajib headless
-            '--no-sandbox',
-            '--disable-gpu',
-            '--disable-dev-shm-usage',  // Wajib buat Docker/Railway
-            
-            // === FITUR HEMAT MEMORI ===
-            '--blink-settings=imagesEnabled=false', // JANGAN LOAD GAMBAR (Penting!)
-            '--disable-images',                     // Double kill gambar
-            '--disable-extensions',                 // Matikan ekstensi
-            '--disable-default-apps',
-            '--disable-component-extensions-with-background-pages',
-            '--mute-audio',                         // Matikan suara
-            '--no-first-run',
-            '--disable-background-networking',
-            
-            // Window kecil aja biar gak berat render pixelnya
-            '--window-size=800,600', 
-            
-            '--disable-popup-blocking',
-            '--ignore-certificate-errors',
-            '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        ]);
-    }
-
-    private function closeBrowser()
-    {
-        if ($this->client) {
-            try {
-                $this->client->quit();
-            } catch (\Exception $e) {}
-            $this->client = null;
-        }
-    }
-
-    private function restartBrowser()
-    {
-        $this->closeBrowser();
-        sleep(2); 
-        $this->startBrowser();
-    }
-
-    private function safeOpen($url)
-    {
-        // Set timeout loading biar gak nunggu loading selamanya
-        // Sayangnya Panther agak terbatas soal timeout, jadi kita andalkan sleep
         try {
-            $this->client->request('GET', $url);
-        } catch (\Exception $e) {
-            // Abaikan error timeout, lanjut ambil source code yg ada
-        }
-        
-        // Cek redirect
-        try {
-            $html = $this->client->getPageSource();
-            if (str_contains($html, 'otomatis di alihkan') || str_contains($html, '7 detik')) {
-                sleep(5); 
+            $response = Http::withHeaders([
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer' => 'https://google.com'
+            ])->timeout(15)->get($url);
+
+            if ($response->successful()) {
+                return $response->body();
             }
-        } catch (\Exception $e) {}
+        } catch (\Exception $e) {
+            return null;
+        }
+        return null;
     }
 
+    // --- HELPER ---
     private function isValidVideo($url) {
         return $url && str_contains($url, 'http') && !preg_match('/\.(jpg|png|gif|css|js)$/', $url);
     }
