@@ -25,14 +25,14 @@ return [
             'throw' => false,
             'report' => false,
         ],
-
-        'public' => [
+'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
             
-            // --- BAGIAN PENYELAMAT (ANTI ERROR RTRIM) ---
-            'url' => rtrim(env('APP_URL', 'https://web-production-f1641.up.railway.app'), '/').'/storage',
-            // ---------------------------------------------
+            // --- JURUS HARDCODE (KITA TULIS MANUAL) ---
+            // Kita buang rtrim() dan env() biar tidak ada error lagi.
+            'url' => 'https://web-production-f1641.up.railway.app/storage',
+            // ------------------------------------------
             
             'visibility' => 'public',
             'throw' => false,
