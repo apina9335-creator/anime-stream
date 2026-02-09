@@ -7,12 +7,11 @@ use Symfony\Component\Panther\Client;
 use Symfony\Component\DomCrawler\Crawler;
 use App\Models\Series;
 use App\Models\Episode;
-use Facebook\WebDriver\Exception\WebDriverException;
 
 class GrabAnime extends Command
 {
     protected $signature = 'anime:grab {url} {series_id}';
-    protected $description = 'Robot Scraper Anime (Anti-Crash, Auto-Restart & Memory Saver)';
+    protected $description = 'Robot Scraper Anime (Ultra Low Memory Mode)';
 
     private $client = null;
 
@@ -29,7 +28,7 @@ class GrabAnime extends Command
 
         $this->info("🤖 Mulai scrape: {$anime->title}");
         
-        // 1. MULAI BROWSER PERTAMA KALI
+        // 1. NYALAKAN BROWSER MODE HEMAT
         $this->startBrowser();
 
         try {
@@ -65,7 +64,7 @@ class GrabAnime extends Command
                 return;
             }
 
-            // 3. LOOP EPISODE DENGAN SISTEM ANTI-CRASH
+            // 3. LOOP EPISODE
             $processedCount = 0;
 
             foreach ($episodeLinks as $epUrl) {
@@ -81,35 +80,35 @@ class GrabAnime extends Command
                     continue; 
                 }
 
-                // --- MEMORY SAVER: RESTART BROWSER TIAP 5 EPISODE ---
+                // --- MEMORY SAVER EKSTREM: RESTART BROWSER TIAP 3 EPISODE ---
+                // Biar RAM selalu fresh dan tidak numpuk sampah
                 $processedCount++;
-                if ($processedCount % 5 === 0) {
-                    $this->warn("♻️ Membersihkan Memori (Restart Browser)...");
+                if ($processedCount % 3 === 0) {
+                    $this->warn("♻️ Cuci Gudang Memori (Restart Browser)...");
                     $this->restartBrowser();
                 }
 
                 $this->line("⏳ Proses Ep $epNum...");
 
-                // --- SMART RETRY SYSTEM ---
+                // Retry System
                 $retry = 0;
-                $maxRetries = 2; // Kesempatan 2x kalau gagal
+                $maxRetries = 2;
                 $success = false;
 
                 while ($retry < $maxRetries && !$success) {
                     try {
                         $this->processEpisode($epUrl, $seriesId, $epNum);
-                        $success = true; // Berhasil!
+                        $success = true; 
                     } catch (\Exception $e) {
                         $msg = $e->getMessage();
-                        
-                        // DETEKSI CRASH / INVALID SESSION
-                        if (str_contains($msg, 'invalid session') || str_contains($msg, 'died') || str_contains($msg, 'chrome not reachable')) {
-                            $this->error("💥 Browser CRASH di Ep $epNum! (Percobaan " . ($retry+1) . ")");
-                            $this->restartBrowser(); // Hidupkan lagi browsernya
+                        // Kalau crash, restart browser dan coba lagi
+                        if (str_contains($msg, 'invalid session') || str_contains($msg, 'crash') || str_contains($msg, 'reachable')) {
+                            $this->error("💥 Browser CRASH di Ep $epNum! (Restarting...)");
+                            $this->restartBrowser();
                             $retry++;
                         } else {
                             $this->warn("⚠️ Gagal Ep $epNum: $msg");
-                            break; // Error lain (bukan crash), skip aja
+                            break; 
                         }
                     }
                 }
@@ -123,7 +122,6 @@ class GrabAnime extends Command
         }
     }
 
-    // --- FUNGSI PROSES 1 EPISODE ---
     private function processEpisode($url, $seriesId, $epNum)
     {
         $this->safeOpen($url);
@@ -170,19 +168,30 @@ class GrabAnime extends Command
         }
     }
 
-    // --- MANAJEMEN BROWSER ---
+    // --- SETTINGAN BROWSER ANTI-JEBOL ---
     private function startBrowser()
     {
         $driverPath = PHP_OS_FAMILY === 'Windows' ? base_path('chromedriver.exe') : null;
+        
         $this->client = Client::createChromeClient($driverPath, [
-            '--headless=new',
+            '--headless=new',           // Wajib headless
             '--no-sandbox',
             '--disable-gpu',
-            '--disable-dev-shm-usage', // KUNCI ANTI CRASH
-            '--disable-extensions',
-            '--mute-audio',
-            '--disable-software-rasterizer',
-            '--window-size=1280,720', // Ukuran kecil biar hemat RAM
+            '--disable-dev-shm-usage',  // Wajib buat Docker/Railway
+            
+            // === FITUR HEMAT MEMORI ===
+            '--blink-settings=imagesEnabled=false', // JANGAN LOAD GAMBAR (Penting!)
+            '--disable-images',                     // Double kill gambar
+            '--disable-extensions',                 // Matikan ekstensi
+            '--disable-default-apps',
+            '--disable-component-extensions-with-background-pages',
+            '--mute-audio',                         // Matikan suara
+            '--no-first-run',
+            '--disable-background-networking',
+            
+            // Window kecil aja biar gak berat render pixelnya
+            '--window-size=800,600', 
+            
             '--disable-popup-blocking',
             '--ignore-certificate-errors',
             '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -202,21 +211,29 @@ class GrabAnime extends Command
     private function restartBrowser()
     {
         $this->closeBrowser();
-        sleep(2); // Istirahat sejenak
+        sleep(2); 
         $this->startBrowser();
     }
 
     private function safeOpen($url)
     {
-        $this->client->request('GET', $url);
-        // Cek redirect aneh
-        $html = $this->client->getPageSource();
-        if (str_contains($html, 'otomatis di alihkan') || str_contains($html, '7 detik')) {
-            sleep(5); // Tunggu redirect
+        // Set timeout loading biar gak nunggu loading selamanya
+        // Sayangnya Panther agak terbatas soal timeout, jadi kita andalkan sleep
+        try {
+            $this->client->request('GET', $url);
+        } catch (\Exception $e) {
+            // Abaikan error timeout, lanjut ambil source code yg ada
         }
+        
+        // Cek redirect
+        try {
+            $html = $this->client->getPageSource();
+            if (str_contains($html, 'otomatis di alihkan') || str_contains($html, '7 detik')) {
+                sleep(5); 
+            }
+        } catch (\Exception $e) {}
     }
 
-    // --- HELPER ---
     private function isValidVideo($url) {
         return $url && str_contains($url, 'http') && !preg_match('/\.(jpg|png|gif|css|js)$/', $url);
     }
