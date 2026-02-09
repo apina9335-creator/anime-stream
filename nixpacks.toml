@@ -1,8 +1,8 @@
 # nixpacks.toml
 
 [phases.setup]
-# KITA TAMBAHKAN: composer, git, unzip (Wajib biar build sukses)
-nixPkgs = ["php82", "composer", "nodejs_20", "chromium", "chromedriver", "git", "unzip"]
+# GANTI "composer" JADI "php82Packages.composer"
+nixPkgs = ["php82", "php82Packages.composer", "nodejs_20", "chromium", "chromedriver", "git", "unzip"]
 
 [phases.build]
 cmds = ["npm install", "npm run build", "composer install --no-dev --optimize-autoloader"]
