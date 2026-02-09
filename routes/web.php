@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AnimeController;
 use App\Http\Controllers\AdminController;
+use App\Models\Series; // <--- 1. INI WAJIB DITAMBAHKAN
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -43,7 +44,14 @@ Route::get('/watch/{id}/{ep}', [AnimeController::class, 'watch'])->name('anime.w
 |--------------------------------------------------------------------------
 */
 Route::get('/dashboard', function () {
-    return view('dashboard');
+    // <--- 2. LOGIKA BARU DIMULAI DI SINI
+    // Ambil data anime dari database, urutkan dari yang terbaru, 20 per halaman
+    $series = Series::orderBy('updated_at', 'desc')->paginate(20);
+    
+    // Kirim data ($series) ke tampilan dashboard
+    return view('dashboard', compact('series'));
+    // <--- LOGIKA BARU SELESAI
+
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Symfony\Component\Panther\Client;
+use Symfony\Component\DomCrawler\Crawler;
 use App\Models\Series;
 use App\Models\Episode;
 use App\Models\ScraperLog;
@@ -11,7 +12,7 @@ use App\Models\ScraperLog;
 class GrabAnime extends Command
 {
     protected $signature = 'anime:grab {url} {series_id}';
-    protected $description = 'Robot Scraper Anime (Final Boss Multi Server)';
+    protected $description = 'Robot Scraper Anime (Fixed Selector & Base64 Support)';
 
     public function handle()
     {
@@ -25,160 +26,147 @@ class GrabAnime extends Command
         }
 
         $this->info("🤖 Mulai scrape: {$anime->title}");
+        
+        // ===== SETUP CHROME =====
+        $driverPath = PHP_OS_FAMILY === 'Windows' ? base_path('chromedriver.exe') : null;
 
-        if (class_exists(ScraperLog::class)) {
-            ScraperLog::create(['message' => "Start scrape {$anime->title}"]);
-        }
-
-        // ===== SETUP DRIVER =====
-        $driverPath = PHP_OS_FAMILY === 'Windows'
-            ? base_path('chromedriver.exe')
-            : null;
-
+        // Opsi Chrome
         $client = Client::createChromeClient($driverPath, [
-            '--headless',
+            // '--headless', // Aktifkan ini kalau sudah stabil (biar gak muncul window)
             '--no-sandbox',
             '--disable-gpu',
-            '--disable-dev-shm-usage',
             '--window-size=1200,1100',
+            '--disable-popup-blocking',
+            '--ignore-certificate-errors',
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
         ]);
 
         try {
-            // ===== BUKA HALAMAN SERIES =====
-            $crawler = $client->request('GET', $url);
-            sleep(2);
+            // ===== BUKA HALAMAN & CEK REDIRECT =====
+            $this->safeOpen($client, $url);
+            
+            // Snapshot halaman agar kebal refresh/iklan
+            $this->line("📸 Mengambil snapshot halaman...");
+            $html = $client->getPageSource(); 
+            $crawler = new Crawler($html);
 
-            // ===== AMBIL LINK EPISODE =====
-            $links = [];
-
-            if ($crawler->filter('.eplister ul li a')->count()) {
-                $links = $crawler->filter('.eplister ul li a')->links();
-            } else {
-                foreach ($crawler->filter('a')->links() as $l) {
-                    if (str_contains($l->getUri(), 'episode')) {
-                        $links[] = $l;
-                    }
-                }
-            }
+            // ===== CARI LINK EPISODE (DENGAN SELECTOR BARU) =====
+            $this->line("🔍 Mencari daftar episode...");
+            
+            // DAFTAR JURUS PENCARIAN (SAYA TAMBAH .episodelist DI SINI)
+            $selectors = [
+                '.episodelist ul li a', // <--- INI YANG BARU (Sesuai HTML kamu)
+                '.eplister ul li a',    // Anichin lama
+                '.lstep ul li a',       // Varian lain
+                '#chapterlist ul li a', 
+                '.listsb ul li a',
+                '.bxcl ul li a'         // Cadangan
+            ];
 
             $episodeLinks = [];
-            foreach ($links as $l) {
-                $episodeLinks[] = $l->getUri();
+
+            foreach ($selectors as $selector) {
+                if ($crawler->filter($selector)->count() > 0) {
+                    $this->info("✅ Ketemu pakai jurus: $selector");
+                    $episodeLinks = $crawler->filter($selector)->each(function ($node) {
+                        return $node->attr('href');
+                    });
+                    break;
+                }
             }
 
-            $episodeLinks = array_reverse(array_unique($episodeLinks));
-            $this->info("📋 Ditemukan " . count($episodeLinks) . " episode");
+            // Fallback: Cari link manual yang ada kata "episode"
+            if (empty($episodeLinks)) {
+                $episodeLinks = $crawler->filter('a')->each(function ($node) {
+                    $href = $node->attr('href');
+                    return ($href && str_contains($href, 'episode')) ? $href : null;
+                });
+            }
+
+            // Bersihkan Data
+            $episodeLinks = array_values(array_unique(array_filter($episodeLinks)));
+            $totalEps = count($episodeLinks);
+            $this->info("📋 Ditemukan $totalEps episode");
+
+            if ($totalEps == 0) {
+                $this->error("❌ Masih 0 Episode. Pastikan link series benar (bukan link home).");
+                return;
+            }
 
             // ===== LOOP EPISODE =====
-            foreach ($episodeLinks as $i => $epUrl) {
+            // Kita balik urutannya biar dari Episode 1 (Opsional, hapus array_reverse kalau mau dari terbaru)
+            // $episodeLinks = array_reverse($episodeLinks); 
 
+            foreach ($episodeLinks as $epUrl) {
+                // Perbaiki URL jika relatif
+                if (!str_contains($epUrl, 'http')) $epUrl = $url . $epUrl;
+
+                // Ambil nomor episode
                 preg_match('/episode-(\d+)/', $epUrl, $m);
-                $epNum = $m[1] ?? ($i + 1);
+                $epNum = $m[1] ?? 0;
+                if ($epNum == 0) continue; // Skip kalau gak ada nomornya
 
-                if (Episode::where('series_id', $seriesId)
-                    ->where('episode_number', $epNum)->exists()) {
-                    continue;
+                // Cek database, kalau sudah ada skip biar cepat
+                if (Episode::where('series_id', $seriesId)->where('episode_number', $epNum)->exists()) {
+                    // $this->line("⏩ Skip Ep $epNum (Sudah ada)");
+                    continue; 
                 }
 
-                $this->line("⏳ Episode $epNum");
-
-                $page = $client->request('GET', $epUrl);
-                sleep(2);
-
-                $html = $page->html();
+                $this->line("⏳ Proses Ep $epNum...");
+                
+                // Buka Halaman Episode
+                $this->safeOpen($client, $epUrl);
+                $epHtml = $client->getPageSource();
+                $epCrawler = new Crawler($epHtml);
                 $videoData = [];
 
-                /*
-                |--------------------------------------------------------------------------
-                | 1️⃣ IFRAME
-                |--------------------------------------------------------------------------
-                */
-                $page->filter('iframe')->each(function ($iframe) use (&$videoData) {
+                // --- JURUS 1: IFRAME LANGSUNG ---
+                $epCrawler->filter('iframe')->each(function ($iframe) use (&$videoData) {
                     $src = $iframe->attr('src');
-                    if (isValidVideo($src)) {
-                        $name = detectServerName($src);
-                        $videoData[$name] = $src;
-                    }
+                    if (isValidVideo($src)) $videoData[detectServerName($src)] = $src;
                 });
 
-                /*
-                |--------------------------------------------------------------------------
-                | 2️⃣ DROPDOWN SERVER (BASE64 / URL)
-                |--------------------------------------------------------------------------
-                */
-                $page->filter('select option')->each(function ($opt) use (&$videoData) {
-                    $name = cleanServerName($opt->text());
-                    $value = $opt->attr('value');
-                    $link = null;
+                // --- JURUS 2: DROPDOWN & BASE64 (Sesuai HTML Kamu) ---
+                $epCrawler->filter('select option')->each(function ($opt) use (&$videoData) {
+                    $val = $opt->attr('value');
+                    $link = $val;
 
-                    if (str_contains($value, 'http')) {
-                        $link = $value;
-                    } else {
-                        $decode = base64_decode($value, true);
-                        if ($decode && str_contains($decode, 'http')) {
-                            if (preg_match('/src="([^"]+)"/', $decode, $m)) {
-                                $link = $m[1];
-                            } else {
-                                $link = $decode;
-                            }
+                    // Kalau value-nya aneh (Base64), kita decode dulu
+                    if ($val && !str_contains($val, 'http')) {
+                        $decoded = base64_decode($val, true);
+                        // Hasil decode biasanya: <iframe src="...">
+                        if ($decoded && preg_match('/src="([^"]+)"/', $decoded, $matches)) {
+                            $link = $matches[1];
                         }
                     }
-
-                    if ($link && isValidVideo($link)) {
-                        if (isset($videoData[$name])) $name .= ' (Alt)';
-                        $videoData[$name] = $link;
+                    
+                    if (isValidVideo($link)) {
+                        $videoData[cleanServerName($opt->text())] = $link;
                     }
                 });
 
-                /*
-                |--------------------------------------------------------------------------
-                | 3️⃣ REGEX HUNTER (JS / HIDDEN)
-                |--------------------------------------------------------------------------
-                */
-                $patterns = [
-                    'ok.ru/videoembed',
-                    'blogger.com/video-play',
-                    'dailymotion.com/embed',
-                    'drive.google.com',
-                    'pixeldrain.com',
-                    'streamtape.com',
-                    'mp4upload.com',
-                    'hxfile.co',
-                    'dood.'
-                ];
-
+                // --- JURUS 3: REGEX PENCARI URL ---
+                $patterns = ['ok.ru', 'blogger.com', 'dailymotion', 'drive.google', 'pixeldrain', 'streamtape', 'mp4upload', 'hxfile', 'dood', 'filelions', 'pahe.win', 'streamwish'];
                 foreach ($patterns as $p) {
-                    preg_match_all('/https?:\/\/[^"\']*' . preg_quote($p, '/') . '[^"\']*/i', $html, $m);
+                    preg_match_all('/https?:\/\/[^"\']*' . preg_quote($p, '/') . '[^"\']*/i', $epHtml, $m);
                     foreach ($m[0] ?? [] as $raw) {
-                        $clean = str_replace('\\', '', $raw);
-                        if (isValidVideo($clean)) {
-                            $name = detectServerName($clean);
-                            if (!isset($videoData[$name])) {
-                                $videoData[$name] = $clean;
-                            }
-                        }
+                        $clean = str_replace(['\\', '"', "'"], '', $raw);
+                        if (isValidVideo($clean)) $videoData[detectServerName($clean)] = $clean;
                     }
                 }
 
-                // ===== SIMPAN =====
+                // SIMPAN KE DATABASE
                 if ($videoData) {
                     Episode::updateOrCreate(
                         ['series_id' => $seriesId, 'episode_number' => $epNum],
                         ['video_url' => $videoData, 'updated_at' => now()]
                     );
-
-                    $msg = "✅ Ep $epNum: " . count($videoData) . " server";
-                    $this->info($msg);
-
-                    if (class_exists(ScraperLog::class)) {
-                        ScraperLog::create(['message' => $msg]);
-                    }
+                    $this->info("✅ Ep $epNum tersimpan (" . count($videoData) . " server)");
                 } else {
-                    $this->warn("⚠️ Ep $epNum kosong");
+                    $this->warn("⚠️ Ep $epNum kosong (Gagal ambil video)");
                 }
             }
-
-            $this->info("🏁 SELESAI TOTAL");
+            $this->info("🏁 SELESAI");
 
         } catch (\Exception $e) {
             $this->error("❌ Error: " . $e->getMessage());
@@ -186,54 +174,43 @@ class GrabAnime extends Command
             $client->quit();
         }
     }
+
+    // --- FUNGSI PENGAMAN ---
+    private function safeOpen($client, $targetUrl)
+    {
+        $client->request('GET', $targetUrl);
+        sleep(5); // Tunggu loading
+
+        // Cek halaman "7 detik" / Ruang Tunggu
+        $html = $client->getPageSource();
+        if (str_contains($html, 'otomatis di alihkan') || str_contains($html, '7 detik') || str_contains($html, 'Klik Menuju')) {
+            $this->warn("✋ Terdeteksi Halaman Ruang Tunggu!");
+            try {
+                $link = $client->getCrawler()->selectLink('Klik Menuju Web Anichin');
+                if ($link->count() > 0) {
+                    $client->click($link->link());
+                    sleep(5);
+                } else {
+                    $this->info("💤 Menunggu redirect otomatis (15 detik)...");
+                    sleep(15);
+                }
+            } catch (\Exception $e) {
+                sleep(15);
+            }
+        }
+    }
 }
 
-/*
-|--------------------------------------------------------------------------
-| 🔧 HELPER FUNCTIONS
-|--------------------------------------------------------------------------
-*/
-
-function isValidVideo($url)
-{
+// --- HELPER FUNCTIONS ---
+function isValidVideo($url) {
     if (!$url || !str_contains($url, 'http')) return false;
     if (preg_match('/\.(jpg|png|gif|css|js|svg)$/', $url)) return false;
-
-    $blacklist = ['facebook.com', 'twitter.com', 'googlesyndication', 'analytics'];
-    foreach ($blacklist as $b) {
-        if (str_contains($url, $b)) return false;
-    }
     return true;
 }
-
-function detectServerName($url)
-{
+function detectServerName($url) {
     $host = parse_url($url, PHP_URL_HOST) ?? 'unknown';
-
-    $map = [
-        'ok.ru' => 'OKRU',
-        'blogger.com' => 'Blogger',
-        'dailymotion.com' => 'Dailymotion',
-        'drive.google.com' => 'GDrive',
-        'pixeldrain.com' => 'Pixeldrain',
-        'streamtape.com' => 'Streamtape',
-        'mp4upload.com' => 'Mp4Upload',
-        'hxfile.co' => 'HxFile',
-        'dood.' => 'Doodstream',
-    ];
-
-    foreach ($map as $k => $v) {
-        if (str_contains($host, $k)) return $v;
-    }
-
     return strtoupper(explode('.', $host)[0]);
 }
-
-function cleanServerName($name)
-{
-    return trim(str_replace(
-        ['[ADS]', 'Server', 'Pilih', 'Option'],
-        '',
-        $name
-    ));
+function cleanServerName($name) {
+    return trim(str_replace(['[ADS]', 'Server', '-'], '', $name));
 }
