@@ -3,7 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AnimeController;
 use App\Http\Controllers\AdminController;
-use App\Models\Series; // <--- 1. INI WAJIB DITAMBAHKAN
+use App\Models\Series; 
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -25,6 +25,9 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
     // 3. FITUR EDIT
     Route::get('/series/{id}/edit', [AdminController::class, 'edit'])->name('admin.series.edit');
     Route::put('/series/{id}', [AdminController::class, 'update'])->name('admin.series.update');
+    
+    // 🔥 INI DIA YANG HILANG! JALUR HAPUS 🔥
+    Route::delete('/series/{id}', [AdminController::class, 'destroy'])->name('admin.series.destroy');
 
     // 4. LIVE LOG
     Route::get('/logs', [AdminController::class, 'getLogs'])->name('admin.logs');
@@ -44,13 +47,11 @@ Route::get('/watch/{id}/{ep}', [AnimeController::class, 'watch'])->name('anime.w
 |--------------------------------------------------------------------------
 */
 Route::get('/dashboard', function () {
-    // <--- 2. LOGIKA BARU DIMULAI DI SINI
     // Ambil data anime dari database, urutkan dari yang terbaru, 20 per halaman
     $series = Series::orderBy('updated_at', 'desc')->paginate(20);
     
     // Kirim data ($series) ke tampilan dashboard
     return view('dashboard', compact('series'));
-    // <--- LOGIKA BARU SELESAI
 
 })->middleware(['auth', 'verified'])->name('dashboard');
 
