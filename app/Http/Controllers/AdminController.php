@@ -31,11 +31,7 @@ class AdminController extends Controller
             'source_url' => $request->source_url,
             'description' => 'Anime seru', 
             'poster_image' => 'default.jpg', 
-            
-            // --- PENGAMAN AGAR TIDAK ERROR DATABASE ---
             'image_url' => 'https://via.placeholder.com/300x450', 
-            // ------------------------------------------
-            
             'type' => 'Donghua'
         ]);
 
@@ -49,7 +45,7 @@ class AdminController extends Controller
         return view('admin.edit', compact('anime'));
     }
 
-    // --- 4. UPDATE DATA ANIME (INI BAGIAN PERBAIKANNYA) ---
+    // --- 4. UPDATE DATA ANIME ---
     public function update(Request $request, $id)
     {
         $request->validate([
@@ -65,26 +61,20 @@ class AdminController extends Controller
             'source_url' => $request->source_url,
         ];
 
-        // --- LOGIKA UPLOAD GAMBAR YANG BENAR ---
+        // Logika Upload Gambar
         if ($request->hasFile('poster_image')) {
             try {
                 $file = $request->file('poster_image');
-                // Buat nama file unik
                 $filename = time() . '_' . preg_replace('/\s+/', '', $file->getClientOriginalName());
                 
-                // Pastikan folder ada
                 if (!file_exists(public_path('uploads'))) {
                     mkdir(public_path('uploads'), 0777, true);
                 }
                 
                 $file->move(public_path('uploads'), $filename);
                 
-                // --- PERBAIKAN: Update KEDUA kolom agar sinkron ---
-                $pathGambar = 'uploads/' . $filename;
-                
-                $dataToUpdate['poster_image'] = $pathGambar; // Update poster Admin
-                $dataToUpdate['image_url'] = $pathGambar;    // Update poster Halaman Depan
-                // --------------------------------------------------
+                $dataToUpdate['poster_image'] = 'uploads/' . $filename;
+                $dataToUpdate['image_url'] = 'uploads/' . $filename; // Sinkronisasi gambar
                 
             } catch (\Exception $e) {
                 return back()->with('error', 'Gagal upload gambar: ' . $e->getMessage());
@@ -151,5 +141,24 @@ class AdminController extends Controller
             return response()->json($logs);
         }
         return response()->json([]);
+    }
+
+    // --- 8. HAPUS ANIME (INI YANG KITA TAMBAHKAN) ---
+    public function destroy($id)
+    {
+        $anime = Series::findOrFail($id);
+
+        // Hapus file gambar fisik jika ada (biar server gak penuh sampah)
+        if ($anime->poster_image && !str_contains($anime->poster_image, 'http')) {
+            $filePath = public_path($anime->poster_image);
+            if (file_exists($filePath)) {
+                unlink($filePath);
+            }
+        }
+
+        // Hapus data dari database
+        $anime->delete();
+
+        return back()->with('success', '🗑️ Anime berhasil dihapus!');
     }
 }
