@@ -18,7 +18,7 @@ class AdminController extends Controller
         return view('admin.dashboard', compact('series'));
     }
 
-    // --- 2. TAMBAH ANIME BARU (SUDAH DIPERBAIKI) ---
+    // --- 2. TAMBAH ANIME BARU ---
     public function store(Request $request)
     {
         $request->validate([
@@ -32,10 +32,9 @@ class AdminController extends Controller
             'description' => 'Anime seru', 
             'poster_image' => 'default.jpg', 
             
-            // --- PERBAIKAN PENTING DISINI ---
-            // Kita isi image_url dengan placeholder biar database tidak menolak (Error 1364)
+            // --- PENGAMAN AGAR TIDAK ERROR DATABASE ---
             'image_url' => 'https://via.placeholder.com/300x450', 
-            // --------------------------------
+            // ------------------------------------------
             
             'type' => 'Donghua'
         ]);
@@ -50,7 +49,7 @@ class AdminController extends Controller
         return view('admin.edit', compact('anime'));
     }
 
-    // --- 4. UPDATE DATA ANIME (GAMBAR DLL) ---
+    // --- 4. UPDATE DATA ANIME (INI BAGIAN PERBAIKANNYA) ---
     public function update(Request $request, $id)
     {
         $request->validate([
@@ -64,11 +63,9 @@ class AdminController extends Controller
         $dataToUpdate = [
             'title' => $request->title,
             'source_url' => $request->source_url,
-            // Opsional: Kalau mau update type juga, tambahkan inputnya di form edit
-            // 'type' => $request->type ?? $anime->type, 
         ];
 
-        // Logika Upload Gambar
+        // --- LOGIKA UPLOAD GAMBAR YANG BENAR ---
         if ($request->hasFile('poster_image')) {
             try {
                 $file = $request->file('poster_image');
@@ -82,8 +79,12 @@ class AdminController extends Controller
                 
                 $file->move(public_path('uploads'), $filename);
                 
-                // Simpan path gambar ke database
-                $dataToUpdate['poster_image'] = 'uploads/' . $filename;
+                // --- PERBAIKAN: Update KEDUA kolom agar sinkron ---
+                $pathGambar = 'uploads/' . $filename;
+                
+                $dataToUpdate['poster_image'] = $pathGambar; // Update poster Admin
+                $dataToUpdate['image_url'] = $pathGambar;    // Update poster Halaman Depan
+                // --------------------------------------------------
                 
             } catch (\Exception $e) {
                 return back()->with('error', 'Gagal upload gambar: ' . $e->getMessage());
@@ -104,7 +105,6 @@ class AdminController extends Controller
         }
 
         try {
-            // Jalankan perintah robot secara langsung
             Artisan::call('anime:grab', [
                 'url' => $anime->source_url,
                 'series_id' => $anime->id
