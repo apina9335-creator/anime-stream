@@ -83,7 +83,8 @@
                                 @foreach($series as $anime)
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                       <img src="{{ $anime->poster_image }}" class="h-16 w-12 object-cover rounded shadow-sm">
+                                        {{-- Gambar Pintar (Sudah Accessor) --}}
+                                        <img src="{{ $anime->poster_image }}" class="h-16 w-12 object-cover rounded shadow-sm">
                                     </td>
                                     <td class="px-6 py-4">
                                         <div class="text-sm font-bold text-gray-900">{{ $anime->title }}</div>
@@ -97,7 +98,8 @@
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium flex items-center gap-3">
-                                        {{-- TOMBOL ROBOT SATUAN --}}
+                                        
+                                        {{-- TOMBOL 1: ROBOT --}}
                                         <form action="{{ route('admin.scrape', $anime->id) }}" method="POST">
                                             @csrf
                                             <button type="submit" class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-2 rounded-full hover:bg-indigo-100 transition" title="Jalankan Robot">
@@ -107,12 +109,24 @@
                                             </button>
                                         </form>
 
-                                        {{-- TOMBOL EDIT --}}
+                                        {{-- TOMBOL 2: EDIT --}}
                                         <a href="{{ route('admin.series.edit', $anime->id) }}" class="text-yellow-600 hover:text-yellow-900 bg-yellow-50 p-2 rounded-full hover:bg-yellow-100 transition" title="Edit Data">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                             </svg>
                                         </a>
+
+                                        {{-- TOMBOL 3: HAPUS (MERAH) --}}
+                                        <form action="{{ route('admin.series.destroy', $anime->id) }}" method="POST" onsubmit="return confirm('Yakin ingin menghapus anime ini? Data tidak bisa dikembalikan!');">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="text-red-600 hover:text-red-900 bg-red-50 p-2 rounded-full hover:bg-red-100 transition" title="Hapus Permanen">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                            </button>
+                                        </form>
+
                                     </td>
                                 </tr>
                                 @endforeach
