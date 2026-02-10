@@ -18,7 +18,7 @@
             <div class="bg-gray-800 rounded-lg overflow-hidden hover:scale-105 transition duration-300 shadow-lg group">
                 <a href="{{ route('anime.watch', [$item->id, $item->latestEpisode->episode_number ?? 1]) }}">
                     <div class="relative aspect-[2/3]">
-                      <img src="{{ asset($item->image_url) }}" class="w-full h-full object-cover group-hover:opacity-80 transition">
+                      <img src="{{ $item->image_url }}" class="w-full h-full object-cover group-hover:opacity-80 transition">
                         <span class="absolute top-0 right-0 bg-red-600 text-xs font-bold px-2 py-1 rounded-bl">{{ $item->type }}</span>
                         <div class="absolute bottom-0 w-full bg-gradient-to-t from-black to-transparent p-2 pt-8">
                             <span class="bg-purple-600 text-[10px] px-1 rounded text-white">

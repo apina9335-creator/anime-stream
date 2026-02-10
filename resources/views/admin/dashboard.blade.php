@@ -83,7 +83,7 @@
                                 @foreach($series as $anime)
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <img src="{{ asset($anime->poster_image) }}" class="h-16 w-12 object-cover rounded shadow-sm">
+                                       <img src="{{ $anime->poster_image }}" class="h-16 w-12 object-cover rounded shadow-sm">
                                     </td>
                                     <td class="px-6 py-4">
                                         <div class="text-sm font-bold text-gray-900">{{ $anime->title }}</div>
