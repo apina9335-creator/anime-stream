@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Http; // Pakai HTTP Client Ringan
+use Illuminate\Support\Facades\Http;
 use Symfony\Component\DomCrawler\Crawler;
 use App\Models\Series;
 use App\Models\Episode;
@@ -11,7 +11,7 @@ use App\Models\Episode;
 class GrabAnime extends Command
 {
     protected $signature = 'anime:grab {url} {series_id}';
-    protected $description = 'Robot Scraper Anime (Versi Ringan Tanpa Browser)';
+    protected $description = 'Robot Scraper Anime (Versi Upgrade: Episode + Gambar)';
 
     public function handle()
     {
@@ -24,10 +24,10 @@ class GrabAnime extends Command
             return;
         }
 
-        $this->info("🤖 Mulai scrape: {$anime->title} (Mode Ringan)");
+        $this->info("🤖 Mulai scrape: {$anime->title}...");
 
         try {
-            // 1. AMBIL SOURCE CODE HALAMAN UTAMA (Tanpa Browser)
+            // 1. AMBIL SOURCE CODE HALAMAN UTAMA
             $html = $this->fetchHtml($url);
             
             if (!$html) {
@@ -37,18 +37,58 @@ class GrabAnime extends Command
 
             $crawler = new Crawler($html);
 
+            // --- 🔥 TAMBAHAN: FITUR TARIK GAMBAR OTOMATIS 🔥 ---
+            $this->line("🖼️ Mencari poster anime...");
+            $imageUrl = null;
+
+            // Jurus 1: Cari dari Meta Tag (Paling Akurat)
+            if ($crawler->filter('meta[property="og:image"]')->count() > 0) {
+                $imageUrl = $crawler->filter('meta[property="og:image"]')->attr('content');
+            }
+            // Jurus 2: Cari class umum (.thumb / .poster)
+            elseif ($crawler->filter('.thumb img')->count() > 0) {
+                $imageUrl = $crawler->filter('.thumb img')->attr('src');
+            }
+            elseif ($crawler->filter('.poster img')->count() > 0) {
+                $imageUrl = $crawler->filter('.poster img')->attr('src');
+            }
+            // Jurus 3: Cari gambar pertama di dalam infobox
+            elseif ($crawler->filter('.infox img')->count() > 0) {
+                $imageUrl = $crawler->filter('.infox img')->attr('src');
+            }
+
+            // Kalau ketemu, update database!
+            if ($imageUrl) {
+                // Pastikan link valid
+                if (!str_contains($imageUrl, 'http')) {
+                    $imageUrl = $imageUrl; // Kadang perlu ditambah domain, tapi biasanya meta tag sudah full
+                }
+
+                $this->info("✅ Gambar ditemukan: $imageUrl");
+                
+                // Update ke database (timpa gambar lama/placeholder)
+                $anime->update([
+                    'image_url' => $imageUrl,
+                    'poster_image' => $imageUrl // Kita samakan saja biar aman
+                ]);
+            } else {
+                $this->warn("⚠️ Gambar tidak ketemu, pakai yang lama.");
+            }
+            // -----------------------------------------------------
+
             $this->line("🔍 Mencari daftar episode...");
-            $selectors = ['.episodelist ul li a', '.eplister ul li a', '.lstep ul li a', '#chapterlist ul li a', '.listsb ul li a', '.bxcl ul li a'];
+            $selectors = ['.episodelist ul li a', '.eplister ul li a', '.lstep ul li a', '#chapterlist ul li a', '.listsb ul li a', '.bxcl ul li a', '.bixbox.bxcl ul li a'];
             $episodeLinks = [];
 
             foreach ($selectors as $selector) {
                 if ($crawler->filter($selector)->count() > 0) {
-                    $this->info("✅ Ketemu pakai jurus: $selector");
+                    $this->info("✅ Ketemu list episode pakai jurus: $selector");
                     $episodeLinks = $crawler->filter($selector)->each(fn($n) => $n->attr('href'));
                     break;
                 }
             }
 
+            // Fallback kalau selector di atas gagal
             if (empty($episodeLinks)) {
                 $episodeLinks = $crawler->filter('a')->each(function ($node) {
                     $href = $node->attr('href');
@@ -77,16 +117,12 @@ class GrabAnime extends Command
 
                 // Cek database
                 if (Episode::where('series_id', $seriesId)->where('episode_number', $epNum)->exists()) {
-                    // $this->line("⏩ Skip Ep $epNum (Sudah ada)");
                     continue; 
                 }
 
                 $this->line("⏳ Proses Ep $epNum...");
+                usleep(500000); // Jeda 0.5 detik
 
-                // Jeda sedikit biar gak dikira DDOS
-                usleep(500000); // 0.5 detik
-
-                // PROSES EPISODE
                 $this->processEpisode($epUrl, $seriesId, $epNum);
             }
             $this->info("🏁 SELESAI");
@@ -107,20 +143,17 @@ class GrabAnime extends Command
         $crawler = new Crawler($html);
         $videoData = [];
 
-        // --- TEKNIK CARI VIDEO (Sama tapi tanpa JS) ---
-
         // Jurus 1: Iframe
         $crawler->filter('iframe')->each(function ($iframe) use (&$videoData) {
             $src = $iframe->attr('src');
             if ($this->isValidVideo($src)) $videoData[$this->detectServerName($src)] = $src;
         });
 
-        // Jurus 2: Dropdown/Base64
+        // Jurus 2: Dropdown/Base64/Select
         $crawler->filter('select option')->each(function ($opt) use (&$videoData) {
             $val = $opt->attr('value');
             $link = $val;
             
-            // Dekode Base64
             if ($val && !str_contains($val, 'http')) {
                 $decoded = base64_decode($val, true);
                 if ($decoded && preg_match('/src="([^"]+)"/', $decoded, $matches)) $link = $matches[1];
@@ -129,11 +162,9 @@ class GrabAnime extends Command
             if ($this->isValidVideo($link)) $videoData[$this->cleanServerName($opt->text())] = $link;
         });
 
-        // Jurus 3: Regex (Paling Ampuh di Mode Tanpa Browser)
-        // Kita cari string URL di dalam script mentah
-        $patterns = ['ok.ru', 'blogger.com', 'dailymotion', 'drive.google', 'pixeldrain', 'streamtape', 'mp4upload', 'hxfile', 'dood', 'filelions', 'pahe.win', 'streamwish'];
+        // Jurus 3: Regex (Paling Ampuh)
+        $patterns = ['ok.ru', 'blogger.com', 'dailymotion', 'drive.google', 'pixeldrain', 'streamtape', 'mp4upload', 'hxfile', 'dood', 'filelions', 'pahe.win', 'streamwish', 'bstream', 'vidhide'];
         foreach ($patterns as $p) {
-            // Regex mencari link di dalam source code
             preg_match_all('/https?:\/\/[^"\']*' . preg_quote($p, '/') . '[^"\']*/i', $html, $m);
             foreach ($m[0] ?? [] as $raw) {
                 $clean = str_replace(['\\', '"', "'"], '', $raw);
@@ -147,12 +178,9 @@ class GrabAnime extends Command
                 ['video_url' => $videoData, 'updated_at' => now()]
             );
             $this->info("✅ Ep $epNum tersimpan (" . count($videoData) . " server)");
-        } else {
-            $this->warn("⚠️ Ep $epNum kosong (Mungkin butuh JS/Login).");
         }
     }
 
-    // --- FUNGSI REQUEST RINGAN ---
     private function fetchHtml($url)
     {
         try {
@@ -170,9 +198,8 @@ class GrabAnime extends Command
         return null;
     }
 
-    // --- HELPER ---
     private function isValidVideo($url) {
-        return $url && str_contains($url, 'http') && !preg_match('/\.(jpg|png|gif|css|js)$/', $url);
+        return $url && str_contains($url, 'http') && !preg_match('/\.(jpg|png|gif|css|js|webp)$/', $url);
     }
     private function detectServerName($url) {
         return strtoupper(explode('.', parse_url($url, PHP_URL_HOST) ?? 'unknown')[0]);
