@@ -4,7 +4,12 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AnimeController;
 use App\Http\Controllers\AdminController;
 use App\Models\Series; 
+use App\Models\User; // Tambahan untuk Magic Link
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\URL;  // Tambahan
+use Illuminate\Support\Facades\Http; // Tambahan
+use Illuminate\Support\Facades\Auth; // Tambahan
+use Illuminate\Http\Request;         // Tambahan
 
 /*
 |--------------------------------------------------------------------------
@@ -59,6 +64,57 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+/*
+|--------------------------------------------------------------------------
+| JALUR TELEGRAM MAGIC LINK 🚀 (TAMBAHAN BARU)
+|--------------------------------------------------------------------------
+*/
+
+// 1. Route untuk memproses login saat link diklik
+Route::get('/login/magic/{id}', function (Request $request, $id) {
+    // Validasi tanda tangan URL (biar gak bisa dipalsukan)
+    if (! $request->hasValidSignature()) {
+        abort(401, 'Link Login Sudah Kadaluarsa atau Tidak Valid.');
+    }
+
+    // Cari user dan login otomatis
+    $user = User::findOrFail($id);
+    Auth::login($user);
+
+    // Redirect ke dashboard
+    return redirect('/dashboard')->with('success', 'Berhasil login via Telegram!');
+})->name('login.magic');
+
+// 2. Route TEST untuk kirim link ke Telegram (Buka ini di browser untuk tes)
+Route::get('/kirim-magic-link', function () {
+    // Ambil user pertama (Biasanya admin/kamu)
+    $user = User::first(); 
+    
+    if(!$user) {
+        return "❌ Error: Belum ada user di database! Daftar dulu.";
+    }
+
+    // Buat Link Login (Berlaku 10 menit)
+    $url = URL::temporarySignedRoute(
+        'login.magic', now()->addMinutes(10), ['id' => $user->id]
+    );
+
+    // Data dari .env
+    $token = env('TELEGRAM_BOT_TOKEN');
+    $chatId = env('TELEGRAM_ADMIN_ID');
+
+    // Pesan yang dikirim ke Bot
+    $pesan = "🔐 *Magic Link Login*\n\nHalo {$user->name}, klik link di bawah ini untuk masuk ke Dashboard tanpa password:\n\n" . $url;
+
+    // Kirim Request ke Telegram
+    $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", [
+        'chat_id' => $chatId,
+        'text' => $pesan,
+    ]);
+
+    return "✅ Link berhasil dikirim ke Telegram! Cek HP kamu sekarang.";
 });
 
 require __DIR__.'/auth.php';
