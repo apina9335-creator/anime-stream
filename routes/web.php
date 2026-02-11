@@ -45,6 +45,13 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
 */
 Route::get('/', [AnimeController::class, 'index'])->name('home');
 Route::get('/watch/{id}/{ep}', [AnimeController::class, 'watch'])->name('anime.watch');
+// Jalur Publik
+Route::get('/', [AnimeController::class, 'index'])->name('home');
+Route::get('/watch/{id}/{ep}', [AnimeController::class, 'watch'])->name('anime.watch');
+Route::get('/search', [AnimeController::class, 'search'])->name('anime.search');
+Route::get('/type/donghua', [AnimeController::class, 'donghua'])->name('anime.donghua');
+Route::get('/status/ongoing', [AnimeController::class, 'ongoing'])->name('anime.ongoing');
+Route::get('/status/completed', [AnimeController::class, 'completed'])->name('anime.completed');
 
 /*
 |--------------------------------------------------------------------------

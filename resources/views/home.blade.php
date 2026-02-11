@@ -63,7 +63,7 @@
                 </button>
                 
                 {{-- Logo --}}
-                <a href="/" class="flex items-center gap-2 group">
+                <a href="{{ route('home') }}" class="flex items-center gap-2 group">
                     <div class="w-9 h-9 bg-[#dd4e36] rounded flex items-center justify-center font-extrabold text-white text-lg shadow-md group-hover:scale-110 transition duration-300">
                         A
                     </div>
@@ -80,16 +80,16 @@
 
             {{-- TENGAH: MENU DESKTOP (Hilang di HP) --}}
             <div class="hidden md:flex items-center gap-1">
-                <a href="/" class="px-4 py-2 text-sm font-bold text-white bg-[#2a2a2a] rounded-full transition shadow-inner">
+                <a href="{{ route('home') }}" class="px-4 py-2 text-sm font-bold text-white bg-[#2a2a2a] rounded-full transition shadow-inner">
                     Home
                 </a>
-                <a href="#" class="px-4 py-2 text-sm font-bold text-gray-400 hover:text-white hover:bg-[#2a2a2a] rounded-full transition">
+                <a href="{{ route('anime.donghua') }}" class="px-4 py-2 text-sm font-bold text-gray-400 hover:text-white hover:bg-[#2a2a2a] rounded-full transition">
                     Donghua
                 </a>
-                <a href="#" class="px-4 py-2 text-sm font-bold text-gray-400 hover:text-white hover:bg-[#2a2a2a] rounded-full transition">
+                <a href="{{ route('anime.ongoing') }}" class="px-4 py-2 text-sm font-bold text-gray-400 hover:text-white hover:bg-[#2a2a2a] rounded-full transition">
                     Ongoing
                 </a>
-                <a href="#" class="px-4 py-2 text-sm font-bold text-gray-400 hover:text-white hover:bg-[#2a2a2a] rounded-full transition">
+                <a href="{{ route('anime.completed') }}" class="px-4 py-2 text-sm font-bold text-gray-400 hover:text-white hover:bg-[#2a2a2a] rounded-full transition">
                     Completed
                 </a>
             </div>
@@ -98,14 +98,16 @@
             <div class="flex items-center gap-3">
                 {{-- Search Desktop --}}
                 <div class="relative hidden md:block group">
-                    <input type="text" placeholder="Cari anime..." 
-                        class="bg-[#141414] text-sm pl-4 pr-10 py-2 rounded-full w-48 focus:w-64 border border-[#333] focus:border-[#dd4e36] focus:outline-none transition-all duration-300 text-gray-300 placeholder-gray-600">
-                    <button class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 group-hover:text-[#dd4e36] transition">
-                        <i class="fas fa-search"></i>
-                    </button>
+                    <form action="{{ route('anime.search') }}" method="GET">
+                        <input type="text" name="s" placeholder="Cari anime..." 
+                            class="bg-[#141414] text-sm pl-4 pr-10 py-2 rounded-full w-48 focus:w-64 border border-[#333] focus:border-[#dd4e36] focus:outline-none transition-all duration-300 text-gray-300 placeholder-gray-600">
+                        <button type="submit" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 group-hover:text-[#dd4e36] transition">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </form>
                 </div>
 
-                {{-- Search Icon Mobile --}}
+                {{-- Search Icon Mobile (Hanya Ikon) --}}
                 <button class="md:hidden text-gray-300 hover:text-[#dd4e36] p-2">
                     <i class="fas fa-search"></i>
                 </button>
@@ -118,12 +120,21 @@
         </div>
 
         {{-- MENU DROPDOWN HP (Hidden by default) --}}
-        <div id="mobile-menu" class="hidden md:hidden bg-[#1f1f1f] border-t border-[#333] absolute w-full left-0 top-16 shadow-2xl transition-all duration-300">
+        <div id="mobile-menu" class="hidden md:hidden bg-[#1f1f1f] border-t border-[#333] absolute w-full left-0 top-16 shadow-2xl transition-all duration-300 z-40">
             <div class="flex flex-col p-4 space-y-2">
-                <a href="/" class="block px-4 py-3 bg-[#2a2a2a] text-white font-bold rounded border-l-4 border-[#dd4e36]">Home</a>
-                <a href="#" class="block px-4 py-3 text-gray-300 hover:text-white hover:bg-[#2a2a2a] font-semibold rounded transition">Donghua</a>
-                <a href="#" class="block px-4 py-3 text-gray-300 hover:text-white hover:bg-[#2a2a2a] font-semibold rounded transition">Ongoing</a>
-                <a href="#" class="block px-4 py-3 text-gray-300 hover:text-white hover:bg-[#2a2a2a] font-semibold rounded transition">Completed</a>
+                
+                {{-- Search Mobile Form --}}
+                <form action="{{ route('anime.search') }}" method="GET" class="mb-2 relative">
+                    <input type="text" name="s" placeholder="Cari anime..." class="w-full bg-[#141414] text-gray-300 px-4 py-2 rounded border border-[#333] focus:border-[#dd4e36] focus:outline-none">
+                    <button type="submit" class="absolute right-3 top-2.5 text-gray-500">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </form>
+
+                <a href="{{ route('home') }}" class="block px-4 py-3 bg-[#2a2a2a] text-white font-bold rounded border-l-4 border-[#dd4e36]">Home</a>
+                <a href="{{ route('anime.donghua') }}" class="block px-4 py-3 text-gray-300 hover:text-white hover:bg-[#2a2a2a] font-semibold rounded transition">Donghua</a>
+                <a href="{{ route('anime.ongoing') }}" class="block px-4 py-3 text-gray-300 hover:text-white hover:bg-[#2a2a2a] font-semibold rounded transition">Ongoing</a>
+                <a href="{{ route('anime.completed') }}" class="block px-4 py-3 text-gray-300 hover:text-white hover:bg-[#2a2a2a] font-semibold rounded transition">Completed</a>
             </div>
         </div>
     </nav>
@@ -147,7 +158,7 @@
                         <span class="bg-[#dd4e36] text-white text-[10px] md:text-xs font-bold px-2 py-1 rounded mb-3 inline-block uppercase tracking-wider shadow-lg">
                             Trending Now
                         </span>
-                        <h2 class="text-2xl md:text-5xl font-extrabold text-white mb-3 drop-shadow-lg leading-tight">
+                        <h2 class="text-2xl md:text-5xl font-extrabold text-white mb-3 drop-shadow-lg leading-tight line-clamp-1">
                             {{ $slide->title }}
                         </h2>
                         <div class="flex items-center gap-4 text-xs md:text-sm text-gray-300 mb-4 font-medium">
@@ -178,7 +189,7 @@
                     <h3 class="text-xl font-bold text-white border-l-4 border-[#dd4e36] pl-3 uppercase tracking-wide">
                         Latest Release
                     </h3>
-                    <a href="#" class="text-xs font-bold text-gray-400 hover:text-[#dd4e36] bg-[#1f1f1f] px-4 py-1.5 rounded-full transition border border-[#333] hover:border-[#dd4e36]">
+                    <a href="{{ route('anime.ongoing') }}" class="text-xs font-bold text-gray-400 hover:text-[#dd4e36] bg-[#1f1f1f] px-4 py-1.5 rounded-full transition border border-[#333] hover:border-[#dd4e36]">
                         VIEW ALL <i class="fas fa-angle-right ml-1"></i>
                     </a>
                 </div>
