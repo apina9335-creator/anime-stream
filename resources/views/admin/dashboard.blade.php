@@ -8,31 +8,32 @@
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-8">
             
-            {{-- BAGIAN 1: FORMULIR TAMBAH ANIME BARU --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg border-l-4 border-indigo-500">
+           {{-- BAGIAN 1.B: TAMBAH MASSAL (BULK IMPORT) --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg border-l-4 border-green-500 mt-6">
                 <div class="p-6 text-gray-900">
-                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-green-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                         </svg>
-                        Tambah Donghua Baru
+                        Import Massal (Banyak Link Sekaligus)
                     </h3>
 
-                    <form action="{{ route('admin.series.store') }}" method="POST" class="flex flex-col md:flex-row gap-4">
+                    <form action="{{ route('admin.series.bulk') }}" method="POST">
                         @csrf
-                        <div class="flex-1">
-                            <label class="block text-sm font-medium text-gray-700">Judul Anime</label>
-                            <input type="text" name="title" placeholder="Contoh: Soul Land Season 2" required 
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                Paste Link Anime di sini (Satu link per baris)
+                            </label>
+                            <textarea name="bulk_urls" rows="5" placeholder="https://anichin.watch/donghua-a/&#10;https://anichin.watch/donghua-b/&#10;https://anichin.watch/donghua-c/" required 
+                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 font-mono text-sm"></textarea>
+                            <p class="text-xs text-gray-500 mt-1">*Robot akan otomatis mengambil Judul, Poster, dan Episode untuk setiap link.</p>
                         </div>
-                        <div class="flex-1">
-                            <label class="block text-sm font-medium text-gray-700">Link Sumber (Anichin/Lainnya)</label>
-                            <input type="url" name="source_url" placeholder="https://anichin.watch/..." required 
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        </div>
-                        <div class="flex items-end">
-                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded shadow-lg transition">
-                                + SIMPAN
+                        <div class="flex justify-end">
+                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded shadow-lg transition flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                PROSES SEMUA SEKALIGUS
                             </button>
                         </div>
                     </form>

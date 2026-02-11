@@ -161,4 +161,53 @@ class AdminController extends Controller
 
         return back()->with('success', '🗑️ Anime berhasil dihapus!');
     }
+
+    // --- 2.B. TAMBAH BANYAK SEKALIGUS (BULK IMPORT) ---
+    public function bulkStore(Request $request)
+    {
+        $request->validate([
+            'bulk_urls' => 'required|string'
+        ]);
+
+        // Pecah text berdasarkan baris baru (Enter)
+        $urls = preg_split('/\r\n|[\r\n]/', $request->bulk_urls);
+        $urls = array_filter($urls); // Hapus baris kosong
+        $successCount = 0;
+
+        foreach ($urls as $url) {
+            $url = trim($url);
+            if (!filter_var($url, FILTER_VALIDATE_URL)) continue; // Lewati kalau bukan URL
+
+            // Cek apakah URL sudah ada di database biar gak dobel
+            if (Series::where('source_url', $url)->exists()) continue;
+
+            // Buat Judul Sementara (Nanti akan diupdate otomatis oleh Robot)
+            // Kita ambil potongan URL sebagai judul sementara
+            $tempTitle = ucfirst(basename(parse_url($url, PHP_URL_PATH) ?? 'Anime Baru'));
+            $tempTitle = str_replace(['-', '_', '/'], ' ', $tempTitle);
+
+            $anime = Series::create([
+                'title' => $tempTitle, // Judul sementara
+                'source_url' => $url,
+                'description' => 'Menunggu Robot...',
+                'poster_image' => 'default.jpg',
+                'image_url' => 'https://via.placeholder.com/300x450',
+                'type' => 'Donghua'
+            ]);
+
+            // 🔥 LANGSUNG JALANKAN ROBOT UNTUK ANIME INI 🔥
+            try {
+                Artisan::call('anime:grab', [
+                    'url' => $anime->source_url,
+                    'series_id' => $anime->id
+                ]);
+                $successCount++;
+            } catch (\Exception $e) {
+                // Kalau gagal scrape, biarkan saja, nanti bisa diupdate manual
+                Log::error("Gagal auto-scrape bulk: " . $e->getMessage());
+            }
+        }
+
+        return back()->with('success', "🚀 Mantap! Berhasil menambahkan $successCount anime baru sekaligus.");
+    }
 }

@@ -17,6 +17,11 @@ use Illuminate\Http\Request;         // Tambahan
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
+    // ... route yang lain ...
+    
+    // 🔥 TAMBAHAN: Route Bulk Import 🔥
+    Route::post('/series/bulk', [AdminController::class, 'bulkStore'])->name('admin.series.bulk');
+    
     // 1. Dashboard & Simpan Baru
     Route::get('/dashboard', [AdminController::class, 'index'])->name('admin.dashboard');
     Route::post('/series', [AdminController::class, 'store'])->name('admin.series.store');
